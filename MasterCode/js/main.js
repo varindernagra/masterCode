@@ -48,6 +48,10 @@ jQuery(document).ready(function($) {
 
     moment.lang(lang);
 
+    /*
+    // TODO: comment out this block on your machine, I can test it as I don't have
+    // the script you're running on your rpi and it throws 404s
+
 	//connect do Xbee monitor
 	var socket = io.connect('http://rpi-alarm.local:8082');
 	socket.on('dishwasher', function (dishwasherReady) {
@@ -59,6 +63,7 @@ jQuery(document).ready(function($) {
 			$('.lower-third').fadeIn(2000);
 		}
 	});
+	*/
 
 
 	(function checkVersion()
@@ -192,7 +197,9 @@ jQuery(document).ready(function($) {
 	})();
 	*/
 
-	(function updateCurrentWeather()
+	var nonExistingCityLearnt;
+
+	function updateCurrentWeather()
 	{
 		var iconTable = {
 			'01d':'wi-day-sunny',
@@ -217,6 +224,17 @@ jQuery(document).ready(function($) {
 
 
 		$.getJSON('http://api.openweathermap.org/data/2.5/weather', weatherParams, function(json, textStatus) {
+
+			if (json.cod == "404") {
+				if (isMobile && nonExistingCityLearnt == null) {
+					alert(json.message);
+					nonExistingCityLearnt = true;
+				}
+				return;
+			}
+
+			// With this hack we make sure that alert is shown only once per non existing city
+			nonExistingCityLearnt = null;
 
 			var temp = roundVal(json.main.temp);
 			var temp_min = roundVal(json.main.temp_min);
@@ -244,12 +262,10 @@ jQuery(document).ready(function($) {
 			$('.windsun').updateWithText(windString+' '+sunString, 1000);
 		});
 
-		setTimeout(function() {
-			updateCurrentWeather();
-		}, 60000);
-	})();
+	}
 
-	(function updateWeatherForecast()
+
+	function updateWeatherForecast()
 	{
 		var iconTable = {
 			'01d':'wi-day-sunny',
@@ -316,36 +332,155 @@ jQuery(document).ready(function($) {
 			$('.forecast').updateWithText(forecastTable, 1000);
 		});
 
-		setTimeout(function() {
-			updateWeatherForecast();
-		}, 60000);
-	})();
+	}
+
+
+	// First invokation of weather functions
+	updateCurrentWeather();
+	updateWeatherForecast();
+
+	// Setting intervals for weather functions
+	var firstWeatherLoop = setInterval(function() {
+		updateCurrentWeather();
+	}, 60000);
+
+	var firstForecastLoop = setInterval(function() {
+		updateWeatherForecast();
+	}, 20000);
 
 	(function fetchNews() {
-		$.feedToJson({
-			feed: feed,
-			success: function(data){
-				news = [];
-				for (var i in data.item) {
-					var item = data.item[i];
-					news.push(item.title);
+		if ($('#news-box').is(":visible")) {
+			$.feedToJson({
+				feed: feed,
+				success: function(data){
+					news = [];
+					for (var i in data.item) {
+						var item = data.item[i];
+						news.push(item.title);
+					}
 				}
-			}
-		});
+			});
+		}
 		setTimeout(function() {
 			fetchNews();
 		}, 60000);
 	})();
 
 	(function showNews() {
-		var newsItem = news[newsIndex];
-		$('.news').updateWithText(newsItem,2000);
+		if ($('#news-box').is(":visible")) {
+			var newsItem = news[newsIndex];
+			$('.news').updateWithText(newsItem,2000);
 
-		newsIndex--;
-		if (newsIndex < 0) newsIndex = news.length - 1;
+			newsIndex--;
+			if (newsIndex < 0) newsIndex = news.length - 1;
+		}
+
 		setTimeout(function() {
 			showNews();
 		}, 5500);
 	})();
 
+	// Mobile <-> Desktop communication functions start here
+
+	// Useful flag
+	var isMobile = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
+         (navigator.msMaxTouchPoints > 0));
+
+	// Ask the server for data, we wait a little bit not to overload the server
+    setTimeout(function() {
+
+		var socket = io("http://" + location.host +":3000");
+		socket.on('connect', function() {
+			// Fetching the current configuration
+			socket.emit("get","city");
+			socket.emit("get", "news");
+
+		});
+
+		// We received "city"
+		var socketManagedIntervalWeather = null;
+		var socketManagedIntervalForecast = null;
+        socket.on("city", function (data) {
+        	// Updating the weather params
+
+            weatherParams["q"] = data;
+
+            // Special function for mobile
+            if (isMobile) {
+            	$('#input-city').val(data);
+            }
+
+            clearInterval(firstWeatherLoop);
+            clearInterval(firstForecastLoop);
+
+            if (socketManagedIntervalWeather != null) {
+            	clearInterval(socketManagedIntervalWeather)
+            }
+
+            if (socketManagedIntervalForecast != null) {
+            	clearInterval(socketManagedIntervalForecast);
+            }
+
+            updateCurrentWeather();
+            updateWeatherForecast();
+
+        	var socketManagedIntervalWeather = setInterval(function() {
+				updateCurrentWeather();
+			}, 60000);
+
+			var socketManagedIntervalForecast = setInterval(function() {
+				updateWeatherForecast();
+			}, 20000);
+
+        });
+
+        // We recieved "news"
+        socket.on("news", function (data) {
+        	// Show if data is true, hide if data false
+        	if (data == "true") {
+        		$('#news-box').show();
+        	} else {
+        		$('#news-box').hide();
+        	}
+
+        	if (isMobile) {
+        		// We want to change the text of the news on/off button now
+        		$('#toggle-news').text(data == "true" ? "Turn news off" : "Turn news on");
+        		if (data == "true") {
+        			$('#toggle-news').data("news", "false");
+        		} else {
+        			$('#toggle-news').data("news", "true");
+        		}
+        	}
+        });
+
+        // Special features for the mobile version: setting parameters
+        if (isMobile) {
+
+        	// News functions
+        	$('#toggle-news').click(function() {
+        		var args = {
+        			news: $('#toggle-news').data("news")
+        		};
+        		socket.emit('set', JSON.stringify(args));
+
+        	});
+
+        	// Weather functions
+	    	$('#set-city').click(function () {
+	    		// Before sending city submission we got to make sure that
+        		// 1) the field on the mobile is not empty
+        		// 2) the field on the mobile is different than the the current
+        		// city, we don't want redundant requests
+        		if ($('#input-city').val() != "" && $('#input-city').val() != weatherParams["q"]) {
+        			var args = {
+        				city: $('#input-city').val()
+        			};
+
+        			socket.emit('set', JSON.stringify(args));
+        		}
+        	});
+    	}
+
+	}, 1000);
 });
