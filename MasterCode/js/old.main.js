@@ -1,0 +1,419 @@
+
+
+    (function checkVersion()
+    {
+        $.getJSON('githash.php', {}, function(json, textStatus) {
+            if (json) {
+                if (json.gitHash != gitHash) {
+                    window.location.reload();
+                    window.location.href=window.location.href;
+                }
+            }
+        });
+        setTimeout(function() {
+            checkVersion();
+        }, 3000);
+    })();
+
+    (function updateTime()
+    {
+        var now = moment();
+        var date = now.format('LLLL').split(' ',4);
+        date = date[0] + ' ' + date[1] + ' ' + date[2] + ' ' + date[3];
+
+        $('.date').html(date);
+        $('.time').html(now.format('HH') + ':' + now.format('mm') + '<span class="sec">'+now.format('ss')+'</span>');
+
+        setTimeout(function() {
+            updateTime();
+        }, 1000);
+    })();
+
+    (function updateCalendarData()
+    {
+        new ical_parser("calendar.php", function(cal){
+            events = cal.getEvents();
+            eventList = [];
+
+            for (var i in events) {
+                var e = events[i];
+                for (var key in e) {
+                    var value = e[key];
+                    var seperator = key.search(';');
+                    if (seperator >= 0) {
+                        var mainKey = key.substring(0,seperator);
+                        var subKey = key.substring(seperator+1);
+
+                        var dt;
+                        if (subKey == 'VALUE=DATE') {
+                            //date
+                            dt = new Date(value.substring(0,4), value.substring(4,6) - 1, value.substring(6,8));
+                        } else {
+                            //time
+                            dt = new Date(value.substring(0,4), value.substring(4,6) - 1, value.substring(6,8), value.substring(9,11), value.substring(11,13), value.substring(13,15));
+                        }
+
+                        if (mainKey == 'DTSTART') e.startDate = dt;
+                        if (mainKey == 'DTEND') e.endDate = dt;
+                    }
+                }
+
+                if (e.startDate == undefined){
+                    //some old events in Gmail Calendar is "start_date"
+                    //FIXME: problems with Gmail's TimeZone
+                    var days = moment(e.DTSTART).diff(moment(), 'days');
+                    var seconds = moment(e.DTSTART).diff(moment(), 'seconds');
+                    var startDate = moment(e.DTSTART);
+                } else {
+                    var days = moment(e.startDate).diff(moment(), 'days');
+                    var seconds = moment(e.startDate).diff(moment(), 'seconds');
+                    var startDate = moment(e.startDate);
+                }
+
+                //only add fututre events, days doesn't work, we need to check seconds
+                if (seconds >= 0) {
+                    if (seconds <= 60*60*5 || seconds >= 60*60*24*2) {
+                        var time_string = moment(startDate).fromNow();
+                    }else {
+                        var time_string = moment(startDate).calendar()
+                    }
+                    eventList.push({'description':e.SUMMARY,'seconds':seconds,'days':time_string});
+                }
+            };
+            eventList.sort(function(a,b){return a.seconds-b.seconds});
+
+            setTimeout(function() {
+                updateCalendarData();
+            }, 60000);
+        });
+    })();
+
+    (function updateCalendar()
+    {
+        table = $('<table/>').addClass('xsmall').addClass('calendar-table');
+        opacity = 1;
+
+
+        for (var i in eventList) {
+            var e = eventList[i];
+
+            var row = $('<tr/>').css('opacity',opacity);
+            row.append($('<td/>').html(e.description).addClass('description'));
+            row.append($('<td/>').html(e.days).addClass('days dimmed'));
+            table.append(row);
+
+            opacity -= 1 / eventList.length;
+        }
+
+        $('.calendar').updateWithText(table,1000);
+
+        setTimeout(function() {
+            updateCalendar();
+        }, 1000);
+    })();
+
+    /*
+    (function updateCompliment()
+    {
+        //see compliments.js
+        while (compliment == lastCompliment) {
+            compliment = Math.floor(Math.random()*compliments.length);
+        }
+
+        $('.compliment').updateWithText(compliments[compliment], 4000);
+
+        lastCompliment = compliment;
+
+        setTimeout(function() {
+            updateCompliment(true);
+        }, 30000);
+
+    })();
+    */
+
+    var nonExistingCityLearnt;
+
+    function updateCurrentWeather()
+    {
+        var iconTable = {
+            '01d':'wi-day-sunny',
+            '02d':'wi-day-cloudy',
+            '03d':'wi-cloudy',
+            '04d':'wi-cloudy-windy',
+            '09d':'wi-showers',
+            '10d':'wi-rain',
+            '11d':'wi-thunderstorm',
+            '13d':'wi-snow',
+            '50d':'wi-fog',
+            '01n':'wi-night-clear',
+            '02n':'wi-night-cloudy',
+            '03n':'wi-night-cloudy',
+            '04n':'wi-night-cloudy',
+            '09n':'wi-night-showers',
+            '10n':'wi-night-rain',
+            '11n':'wi-night-thunderstorm',
+            '13n':'wi-night-snow',
+            '50n':'wi-night-alt-cloudy-windy'
+        }
+
+
+        $.getJSON('http://api.openweathermap.org/data/2.5/weather', weatherParams, function(json, textStatus) {
+
+            if (json.cod == "404") {
+                if (isMobile && nonExistingCityLearnt == null) {
+                    alert(json.message);
+                    nonExistingCityLearnt = true;
+                }
+                return;
+            }
+
+            // With this hack we make sure that alert is shown only once per non existing city
+            nonExistingCityLearnt = null;
+
+            var temp = roundVal(json.main.temp);
+            var temp_min = roundVal(json.main.temp_min);
+            var temp_max = roundVal(json.main.temp_max);
+
+            var wind = roundVal(json.wind.speed);
+
+            var iconClass = iconTable[json.weather[0].icon];
+            var icon = $('<span/>').addClass('icon').addClass('dimmed').addClass('wi').addClass(iconClass);
+            $('.temp').updateWithText(icon.outerHTML()+temp+'&deg;', 1000);
+
+            // var forecast = 'Min: '+temp_min+'&deg;, Max: '+temp_max+'&deg;';
+            // $('.forecast').updateWithText(forecast, 1000);
+
+            var now = new Date();
+            var sunrise = new Date(json.sys.sunrise*1000).toTimeString().substring(0,5);
+            var sunset = new Date(json.sys.sunset*1000).toTimeString().substring(0,5);
+
+            var windString = '<span class="wi wi-strong-wind xdimmed"></span> ' + kmh2beaufort(wind) ;
+            var sunString = '<span class="wi wi-sunrise xdimmed"></span> ' + sunrise;
+            if (json.sys.sunrise*1000 < now && json.sys.sunset*1000 > now) {
+                sunString = '<span class="wi wi-sunset xdimmed"></span> ' + sunset;
+            }
+
+            $('.windsun').updateWithText(windString+' '+sunString, 1000);
+        });
+
+    }
+
+
+    function updateWeatherForecast()
+    {
+        var iconTable = {
+            '01d':'wi-day-sunny',
+            '02d':'wi-day-cloudy',
+            '03d':'wi-cloudy',
+            '04d':'wi-cloudy-windy',
+            '09d':'wi-showers',
+            '10d':'wi-rain',
+            '11d':'wi-thunderstorm',
+            '13d':'wi-snow',
+            '50d':'wi-fog',
+            '01n':'wi-night-clear',
+            '02n':'wi-night-cloudy',
+            '03n':'wi-night-cloudy',
+            '04n':'wi-night-cloudy',
+            '09n':'wi-night-showers',
+            '10n':'wi-night-rain',
+            '11n':'wi-night-thunderstorm',
+            '13n':'wi-night-snow',
+            '50n':'wi-night-alt-cloudy-windy'
+        }
+            $.getJSON('http://api.openweathermap.org/data/2.5/forecast', weatherParams, function(json, textStatus) {
+
+            var forecastData = {};
+
+            for (var i in json.list) {
+                var forecast = json.list[i];
+                var dateKey  = forecast.dt_txt.substring(0, 10);
+
+                if (forecastData[dateKey] == undefined) {
+                    forecastData[dateKey] = {
+                        'timestamp':forecast.dt * 1000,
+                        'icon':forecast.weather[0].icon,
+                        'temp_min':forecast.main.temp,
+                        'temp_max':forecast.main.temp
+                    };
+                } else {
+                    forecastData[dateKey]['icon'] = forecast.weather[0].icon;
+                    forecastData[dateKey]['temp_min'] = (forecast.main.temp < forecastData[dateKey]['temp_min']) ? forecast.main.temp : forecastData[dateKey]['temp_min'];
+                    forecastData[dateKey]['temp_max'] = (forecast.main.temp > forecastData[dateKey]['temp_max']) ? forecast.main.temp : forecastData[dateKey]['temp_max'];
+                }
+
+            }
+
+
+            var forecastTable = $('<table />').addClass('forecast-table');
+            var opacity = 1;
+            for (var i in forecastData) {
+                var forecast = forecastData[i];
+                var iconClass = iconTable[forecast.icon];
+                var dt = new Date(forecast.timestamp);
+                var row = $('<tr />').css('opacity', opacity);
+
+                row.append($('<td/>').addClass('day').html(moment.weekdaysShort(dt.getDay())));
+                row.append($('<td/>').addClass('icon-small').addClass(iconClass));
+                row.append($('<td/>').addClass('temp-max').html(roundVal(forecast.temp_max)));
+                row.append($('<td/>').addClass('temp-min').html(roundVal(forecast.temp_min)));
+
+                forecastTable.append(row);
+                opacity -= 0.155;
+            }
+
+
+            $('.forecast').updateWithText(forecastTable, 1000);
+        });
+
+    }
+
+
+    // First invokation of weather functions
+    updateCurrentWeather();
+    updateWeatherForecast();
+
+    // Setting intervals for weather functions
+    var firstWeatherLoop = setInterval(function() {
+        updateCurrentWeather();
+    }, 60000);
+
+    var firstForecastLoop = setInterval(function() {
+        updateWeatherForecast();
+    }, 20000);
+
+    (function fetchNews() {
+        if ($('#news-box').is(":visible")) {
+            $.feedToJson({
+                feed: feed,
+                success: function(data){
+                    news = [];
+                    for (var i in data.item) {
+                        var item = data.item[i];
+                        news.push(item.title);
+                    }
+                }
+            });
+        }
+        setTimeout(function() {
+            fetchNews();
+        }, 60000);
+    })();
+
+    (function showNews() {
+        if ($('#news-box').is(":visible")) {
+            var newsItem = news[newsIndex];
+            $('.news').updateWithText(newsItem,2000);
+
+            newsIndex--;
+            if (newsIndex < 0) newsIndex = news.length - 1;
+        }
+
+        setTimeout(function() {
+            showNews();
+        }, 5500);
+    })();
+
+    // Mobile <-> Desktop communication functions start here
+
+    // Useful flag
+    var isMobile = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
+         (navigator.msMaxTouchPoints > 0));
+
+    // Ask the server for data, we wait a little bit not to overload the server
+    setTimeout(function() {
+
+        var socket = io("http://" + location.host +":3000");
+        socket.on('connect', function() {
+            // Fetching the current configuration
+            socket.emit("get","city");
+            socket.emit("get", "news");
+
+        });
+
+        // We received "city"
+        var socketManagedIntervalWeather = null;
+        var socketManagedIntervalForecast = null;
+        socket.on("city", function (data) {
+            // Updating the weather params
+
+            weatherParams["q"] = data;
+
+            // Special function for mobile
+            if (isMobile) {
+                $('#input-city').val(data);
+            }
+
+            clearInterval(firstWeatherLoop);
+            clearInterval(firstForecastLoop);
+
+            if (socketManagedIntervalWeather != null) {
+                clearInterval(socketManagedIntervalWeather)
+            }
+
+            if (socketManagedIntervalForecast != null) {
+                clearInterval(socketManagedIntervalForecast);
+            }
+
+            updateCurrentWeather();
+            updateWeatherForecast();
+
+            var socketManagedIntervalWeather = setInterval(function() {
+                updateCurrentWeather();
+            }, 60000);
+
+            var socketManagedIntervalForecast = setInterval(function() {
+                updateWeatherForecast();
+            }, 20000);
+
+        });
+
+        // We recieved "news"
+        socket.on("news", function (data) {
+            // Show if data is true, hide if data false
+            if (data == "true") {
+                $('#news-box').show();
+            } else {
+                $('#news-box').hide();
+            }
+
+            if (isMobile) {
+                // We want to change the text of the news on/off button now
+                $('#toggle-news').text(data == "true" ? "Turn news off" : "Turn news on");
+                if (data == "true") {
+                    $('#toggle-news').data("news", "false");
+                } else {
+                    $('#toggle-news').data("news", "true");
+                }
+            }
+        });
+
+        // Special features for the mobile version: setting parameters
+        if (isMobile) {
+
+            // News functions
+            $('#toggle-news').click(function() {
+                var args = {
+                    news: $('#toggle-news').data("news")
+                };
+                socket.emit('set', JSON.stringify(args));
+
+            });
+
+            // Weather functions
+            $('#set-city').click(function () {
+                // Before sending city submission we got to make sure that
+                // 1) the field on the mobile is not empty
+                // 2) the field on the mobile is different than the the current
+                // city, we don't want redundant requests
+                if ($('#input-city').val() != "" && $('#input-city').val() != weatherParams["q"]) {
+                    var args = {
+                        city: $('#input-city').val()
+                    };
+
+                    socket.emit('set', JSON.stringify(args));
+                }
+            });
+        }
+
+    }, 1000);

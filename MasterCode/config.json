@@ -1,0 +1,9 @@
+{
+    "weatherParams": {
+        "q": "San Francisco",
+        "units": "imperial",
+        "lang": "en"
+    },
+    "feed": "http://www.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    "newsOn": true
+}
