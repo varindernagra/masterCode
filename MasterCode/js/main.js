@@ -34,7 +34,7 @@ jQuery(document).ready(function($) {
     var feed, weatherParams, lang, newsOn;
     $.ajax({
         dataType: "json",
-        url: "/config.json",
+        url: "config.json",
         async: false
     }).done(function(data) {
         feed = data["feed"];
