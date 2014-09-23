@@ -74,82 +74,84 @@ jQuery(document).ready(function($) {
             }, 1000);
         })();
     }
-    (function updateCalendarData() {
-        new ical_parser("calendar.php", function(cal) {
-            events = cal.getEvents();
-            eventList = [];
-            for (var i in events) {
-                var e = events[i];
-                for (var key in e) {
-                    var value = e[key];
-                    var seperator = key.search(';');
-                    if (seperator >= 0) {
-                        var mainKey = key.substring(0, seperator);
-                        var subKey = key.substring(seperator + 1);
-                        var dt;
-                        if (subKey == 'VALUE=DATE') {
-                            //date
-                            dt = new Date(value.substring(0, 4), value.substring(4, 6) - 1, value.substring(
-                                6, 8));
-                        } else {
-                            //time
-                            dt = new Date(value.substring(0, 4), value.substring(4, 6) - 1, value.substring(
-                                    6, 8), value.substring(9, 11), value.substring(11, 13),
-                                value.substring(13, 15));
+    if (!isMobile) {
+        (function updateCalendarData() {
+            new ical_parser("calendar.php", function(cal) {
+                events = cal.getEvents();
+                eventList = [];
+                for (var i in events) {
+                    var e = events[i];
+                    for (var key in e) {
+                        var value = e[key];
+                        var seperator = key.search(';');
+                        if (seperator >= 0) {
+                            var mainKey = key.substring(0, seperator);
+                            var subKey = key.substring(seperator + 1);
+                            var dt;
+                            if (subKey == 'VALUE=DATE') {
+                                //date
+                                dt = new Date(value.substring(0, 4), value.substring(4, 6) - 1, value.substring(
+                                    6, 8));
+                            } else {
+                                //time
+                                dt = new Date(value.substring(0, 4), value.substring(4, 6) - 1, value.substring(
+                                        6, 8), value.substring(9, 11), value.substring(11, 13),
+                                    value.substring(13, 15));
+                            }
+                            if (mainKey == 'DTSTART') e.startDate = dt;
+                            if (mainKey == 'DTEND') e.endDate = dt;
                         }
-                        if (mainKey == 'DTSTART') e.startDate = dt;
-                        if (mainKey == 'DTEND') e.endDate = dt;
                     }
-                }
-                if (e.startDate === undefined) {
-                    //some old events in Gmail Calendar is "start_date"
-                    //FIXME: problems with Gmail's TimeZone
-                    var days = moment(e.DTSTART).diff(moment(), 'days');
-                    var seconds = moment(e.DTSTART).diff(moment(), 'seconds');
-                    var startDate = moment(e.DTSTART);
-                } else {
-                    var days = moment(e.startDate).diff(moment(), 'days');
-                    var seconds = moment(e.startDate).diff(moment(), 'seconds');
-                    var startDate = moment(e.startDate);
-                }
-                //only add fututre events, days doesn't work, we need to check seconds
-                if (seconds >= 0) {
-                    if (seconds <= 60 * 60 * 5 || seconds >= 60 * 60 * 24 * 2) {
-                        var time_string = moment(startDate).fromNow();
+                    if (e.startDate === undefined) {
+                        //some old events in Gmail Calendar is "start_date"
+                        //FIXME: problems with Gmail's TimeZone
+                        var days = moment(e.DTSTART).diff(moment(), 'days');
+                        var seconds = moment(e.DTSTART).diff(moment(), 'seconds');
+                        var startDate = moment(e.DTSTART);
                     } else {
-                        var time_string = moment(startDate).calendar()
+                        var days = moment(e.startDate).diff(moment(), 'days');
+                        var seconds = moment(e.startDate).diff(moment(), 'seconds');
+                        var startDate = moment(e.startDate);
                     }
-                    eventList.push({
-                        'description': e.SUMMARY,
-                        'seconds': seconds,
-                        'days': time_string
-                    });
+                    //only add fututre events, days doesn't work, we need to check seconds
+                    if (seconds >= 0) {
+                        if (seconds <= 60 * 60 * 5 || seconds >= 60 * 60 * 24 * 2) {
+                            var time_string = moment(startDate).fromNow();
+                        } else {
+                            var time_string = moment(startDate).calendar()
+                        }
+                        eventList.push({
+                            'description': e.SUMMARY,
+                            'seconds': seconds,
+                            'days': time_string
+                        });
+                    }
                 }
-            }
-            eventList.sort(function(a, b) {
-                return a.seconds - b.seconds
+                eventList.sort(function(a, b) {
+                    return a.seconds - b.seconds
+                });
+                setTimeout(function() {
+                    updateCalendarData();
+                }, 60000);
             });
+        })();
+        (function updateCalendar() {
+            table = $('<table/>').addClass('xsmall').addClass('calendar-table');
+            opacity = 1;
+            for (var i in eventList) {
+                var e = eventList[i];
+                var row = $('<tr/>').css('opacity', opacity);
+                row.append($('<td/>').html(e.description).addClass('description'));
+                row.append($('<td/>').html(e.days).addClass('days dimmed'));
+                table.append(row);
+                opacity -= 1 / eventList.length;
+            }
+            $('.calendar').updateWithText(table, 1000);
             setTimeout(function() {
-                updateCalendarData();
-            }, 60000);
-        });
-    })();
-    (function updateCalendar() {
-        table = $('<table/>').addClass('xsmall').addClass('calendar-table');
-        opacity = 1;
-        for (var i in eventList) {
-            var e = eventList[i];
-            var row = $('<tr/>').css('opacity', opacity);
-            row.append($('<td/>').html(e.description).addClass('description'));
-            row.append($('<td/>').html(e.days).addClass('days dimmed'));
-            table.append(row);
-            opacity -= 1 / eventList.length;
-        }
-        $('.calendar').updateWithText(table, 1000);
-        setTimeout(function() {
-            updateCalendar();
-        }, 1000);
-    })();
+                updateCalendar();
+            }, 1000);
+        })();
+    }
     /*
     (function updateCompliment()
     {
